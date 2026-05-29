@@ -1,103 +1,143 @@
-import io, numpy as np, streamlit as st, cv2
+import io
+import numpy as np
+import streamlit as st
+import cv2
 from PIL import Image
 
-st.set_page_config(page_title="Fingerprint Matcher", page_icon="🔏", layout="wide")
+st.set_page_config(
+    page_title="Fingerprint Matcher",
+    page_icon="🔏",
+    layout="wide"
+)
 
-HF_REPO_ID    = "Hafsa-Hab1b/fingerprint-siamese"
+HF_REPO_ID = "Hafsa-Hab1b/fingerprint-siamese"
 HF_MODEL_FILE = "fingerprint_siamese.tflite"
-IMG_SIZE      = 64
-THRESHOLD     = 1.0
+
+IMG_SIZE = 64
+DEFAULT_THRESHOLD = 1.0
+
 
 @st.cache_resource(show_spinner="Loading model...")
 def load_model():
     from huggingface_hub import hf_hub_download
-    import tensorflow as tf
-    path = hf_hub_download(repo_id=HF_REPO_ID, filename=HF_MODEL_FILE)
-    interp = tf.lite.Interpreter(model_path=path)
-    interp.allocate_tensors()
-    return interp
+    import tflite_runtime.interpreter as tflite
+
+    model_path = hf_hub_download(
+        repo_id=HF_REPO_ID,
+        filename=HF_MODEL_FILE
+    )
+
+    interpreter = tflite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    return interpreter
+
 
 def preprocess(uploaded_file):
-    data = np.frombuffer(uploaded_file.read(), np.uint8)
-    img  = cv2.imdecode(data, cv2.IMREAD_GRAYSCALE)
-    img  = cv2.resize(img, (IMG_SIZE, IMG_SIZE)).astype("float32") / 255.0
-    return np.expand_dims(img, -1)
+    file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
+    img = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
 
-def predict(interp, a, b, threshold):
-    inp = interp.get_input_details()
-    out = interp.get_output_details()
-    interp.set_tensor(inp[0]["index"], np.expand_dims(a, 0).astype("float32"))
-    interp.set_tensor(inp[1]["index"], np.expand_dims(b, 0).astype("float32"))
-    interp.invoke()
-    dist    = float(interp.get_tensor(out[0]["index"])[0][0])
+    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+    img = img.astype("float32") / 255.0
+
+    return np.expand_dims(img, axis=(0, -1))
+
+
+def predict(interpreter, a, b, threshold):
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    interpreter.set_tensor(input_details[0]["index"], a.astype(np.float32))
+    interpreter.set_tensor(input_details[1]["index"], b.astype(np.float32))
+
+    interpreter.invoke()
+
+    dist = float(interpreter.get_tensor(output_details[0]["index"])[0][0])
+
     is_same = dist < threshold
-    conf    = (1 - dist/threshold)*100 if is_same else ((dist-threshold)/(2-threshold))*100
-    return dist, is_same, float(np.clip(conf, 0, 100))
 
-# ── Sidebar ──
+    if is_same:
+        conf = (1 - dist / threshold) * 100
+    else:
+        conf = (dist - threshold) / (2 - threshold) * 100
+
+    conf = float(np.clip(conf, 0, 100))
+
+    return dist, is_same, conf
+
+
+# ---------------- SIDEBAR ----------------
 with st.sidebar:
     st.title("🔏 Fingerprint Matcher")
     st.markdown("---")
-    threshold = st.slider("Decision threshold", 0.1, 2.0, THRESHOLD, 0.05,
-        help="Distance < threshold = same person. Range is 0-2.")
-    st.markdown("---")
-    st.caption("Siamese network · SOCOfing dataset")
 
-# ── Main ──
-st.title("🔏 Fingerprint Matching")
-st.caption("Upload two fingerprints — the model tells you if they're the same person")
+    threshold = st.slider(
+        "Decision threshold",
+        min_value=0.1,
+        max_value=2.0,
+        value=DEFAULT_THRESHOLD,
+        step=0.05
+    )
+
+    st.caption("Siamese Network · TFLite model")
+
+
+# ---------------- MAIN UI ----------------
+st.title("🔏 Fingerprint Matching System")
+st.write("Upload two fingerprint images to check if they belong to the same person.")
 st.markdown("---")
 
 col1, col2 = st.columns(2)
+
 with col1:
     st.subheader("Fingerprint A")
-    fp_a = st.file_uploader("Upload A", type=["bmp","png","jpg","jpeg"], key="a")
+    fp_a = st.file_uploader("Upload Image A", type=["png", "jpg", "jpeg", "bmp"], key="a")
+
     if fp_a:
-        st.image(Image.open(io.BytesIO(fp_a.read())).convert("L"), use_column_width=True)
-        fp_a.seek(0)
+        st.image(Image.open(fp_a).convert("L"), use_container_width=True)
 
 with col2:
     st.subheader("Fingerprint B")
-    fp_b = st.file_uploader("Upload B", type=["bmp","png","jpg","jpeg"], key="b")
+    fp_b = st.file_uploader("Upload Image B", type=["png", "jpg", "jpeg", "bmp"], key="b")
+
     if fp_b:
-        st.image(Image.open(io.BytesIO(fp_b.read())).convert("L"), use_column_width=True)
-        fp_b.seek(0)
+        st.image(Image.open(fp_b).convert("L"), use_container_width=True)
 
 st.markdown("---")
-btn = st.button("🔍 Compare Fingerprints", use_container_width=True,
-                disabled=not (fp_a and fp_b))
+
+compare_btn = st.button(
+    "🔍 Compare Fingerprints",
+    use_container_width=True,
+    disabled=not (fp_a and fp_b)
+)
 
 if not (fp_a and fp_b):
-    st.info("Upload both fingerprint images above to compare.")
+    st.info("Please upload both fingerprint images to continue.")
 
-if btn and fp_a and fp_b:
-    with st.spinner("Comparing..."):
-        model        = load_model()
-        arr_a        = preprocess(fp_a)
-        arr_b        = preprocess(fp_b)
-        dist, is_same, conf = predict(model, arr_a, arr_b, threshold)
+if compare_btn and fp_a and fp_b:
+    with st.spinner("Running model..."):
+        model = load_model()
+
+        a = preprocess(fp_a)
+        b = preprocess(fp_b)
+
+        dist, is_same, conf = predict(model, a, b, threshold)
 
     st.markdown("## Result")
-    r1, r2 = st.columns([1, 2])
-    with r1:
+
+    left, right = st.columns([1, 2])
+
+    with left:
         if is_same:
-            st.success("## ✅ SAME PERSON")
+            st.success("✅ SAME PERSON")
         else:
-            st.error("## ❌ DIFFERENT PERSONS")
-        st.metric("Confidence",  f"{conf:.1f}%")
-        st.metric("Distance",    f"{dist:.4f}")
-        st.metric("Threshold",   f"{threshold:.2f}")
-    with r2:
-        st.markdown("#### Distance gauge (0 = identical, 2 = completely different)")
+            st.error("❌ DIFFERENT PERSON")
+
+        st.metric("Confidence", f"{conf:.1f}%")
+        st.metric("Distance", f"{dist:.4f}")
+        st.metric("Threshold", f"{threshold:.2f}")
+
+    with right:
+        st.markdown("### Distance Indicator")
         st.progress(min(dist / 2.0, 1.0))
-        c1, c2, c3 = st.columns(3)
-        c1.caption("0 — identical")
-        c2.caption(f"▲ threshold {threshold:.2f}")
-        c3.caption("2 — max diff")
-        st.markdown(f"""
-| | Value | Meaning |
-|---|---|---|
-| Distance | `{dist:.4f}` | How different the two fingerprints are |
-| Threshold | `{threshold:.2f}` | Below this = same person |
-| Confidence | `{conf:.1f}%` | How sure the model is |
-""")
+
+        st.caption("0 = identical fingerprints, 2 = completely different")
