@@ -8,7 +8,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 st.set_page_config(page_title="Fingerprint Matcher", page_icon="🔏", layout="wide")
 
-HF_REPO_ID    = "YOUR_HF_USERNAME/fingerprint-siamese"
+HF_REPO_ID    = "Hafsa-Hab1b/fingerprint-siamese"
 HF_MODEL_FILE = "fingerprint_siamese.tflite"
 IMG_SIZE      = 64
 THRESHOLD     = 1.0
