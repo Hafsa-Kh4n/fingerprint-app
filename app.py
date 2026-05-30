@@ -4,44 +4,41 @@ import streamlit as st
 import cv2
 from PIL import Image
 
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
 st.set_page_config(page_title="Fingerprint Matcher", page_icon="🔏", layout="wide")
 
 HF_REPO_ID    = "Hafsa-Hab1b/fingerprint-siamese"
-HF_MODEL_FILE = "fingerprint_siamese.tflite"
+HF_MODEL_FILE = "fingerprint_siamese.onnx"
 IMG_SIZE      = 64
 THRESHOLD     = 1.0
 
 @st.cache_resource(show_spinner="Loading model... (first time only)")
 def load_model():
     from huggingface_hub import hf_hub_download
-    import tensorflow as tf
-    path   = hf_hub_download(repo_id=HF_REPO_ID, filename=HF_MODEL_FILE)
-    interp = tf.lite.Interpreter(model_path=path)
-    interp.allocate_tensors()
-    return interp
+    import onnxruntime as ort
+    path    = hf_hub_download(repo_id=HF_REPO_ID, filename=HF_MODEL_FILE)
+    session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+    return session
 
 def preprocess(uploaded_file):
     data = np.frombuffer(uploaded_file.read(), np.uint8)
     img  = cv2.imdecode(data, cv2.IMREAD_GRAYSCALE)
     if img is None:
-        st.error("Could not read image. Try a different file.")
+        st.error("Could not read image.")
         st.stop()
     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE)).astype("float32") / 255.0
-    return np.expand_dims(img, -1)
+    return np.expand_dims(np.expand_dims(img, -1), 0)  # (1, 64, 64, 1)
 
-def predict(interp, a, b, threshold):
-    inp = interp.get_input_details()
-    out = interp.get_output_details()
-    interp.set_tensor(inp[0]["index"], np.expand_dims(a, 0).astype("float32"))
-    interp.set_tensor(inp[1]["index"], np.expand_dims(b, 0).astype("float32"))
-    interp.invoke()
-    dist    = float(interp.get_tensor(out[0]["index"])[0][0])
+def predict(session, a, b, threshold):
+    inputs = {
+        session.get_inputs()[0].name: a,
+        session.get_inputs()[1].name: b,
+    }
+    dist    = float(session.run(None, inputs)[0][0][0])
     is_same = dist < threshold
     conf    = (1 - dist/threshold)*100 if is_same else ((dist-threshold)/(2-threshold))*100
     return dist, is_same, float(np.clip(conf, 0, 100))
 
+# ── Sidebar ──
 with st.sidebar:
     st.title("🔏 Fingerprint Matcher")
     st.markdown("---")
@@ -50,6 +47,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Siamese network · SOCOfing dataset")
 
+# ── Main ──
 st.title("🔏 Fingerprint Matching")
 st.caption("Upload two fingerprints — model tells you if they belong to the same person")
 st.markdown("---")
@@ -107,3 +105,6 @@ if btn and fp_a and fp_b:
 | Threshold | `{threshold:.2f}` | Below this = same person |
 | Confidence | `{conf:.1f}%` | How sure the model is |
 """)
+
+st.markdown("---")
+st.caption("Siamese network · SOCOfing dataset · threshold default = 1.0")
