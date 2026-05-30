@@ -8,12 +8,12 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 st.set_page_config(page_title="Fingerprint Matcher", page_icon="🔏", layout="wide")
 
-HF_REPO_ID    = "Hafsa-Hab1b/fingerprint-siamese"
+HF_REPO_ID    = "YOUR_HF_USERNAME/fingerprint-siamese"
 HF_MODEL_FILE = "fingerprint_siamese.tflite"
 IMG_SIZE      = 64
 THRESHOLD     = 1.0
 
-@st.cache_resource(show_spinner="Loading model... (first time only, ~30 sec)")
+@st.cache_resource(show_spinner="Loading model... (first time only)")
 def load_model():
     from huggingface_hub import hf_hub_download
     import tensorflow as tf
@@ -42,7 +42,6 @@ def predict(interp, a, b, threshold):
     conf    = (1 - dist/threshold)*100 if is_same else ((dist-threshold)/(2-threshold))*100
     return dist, is_same, float(np.clip(conf, 0, 100))
 
-# ── Sidebar ──
 with st.sidebar:
     st.title("🔏 Fingerprint Matcher")
     st.markdown("---")
@@ -51,7 +50,6 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Siamese network · SOCOfing dataset")
 
-# ── Main ──
 st.title("🔏 Fingerprint Matching")
 st.caption("Upload two fingerprints — model tells you if they belong to the same person")
 st.markdown("---")
