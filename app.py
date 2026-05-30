@@ -30,8 +30,8 @@ def preprocess(uploaded_file):
 
 def predict(session, a, b, threshold):
     inputs = {
-        session.get_inputs()[0].name: a,
-        session.get_inputs()[1].name: b,
+        'serving_default_input_a:0': a,
+        'serving_default_input_b:0': b,
     }
     dist    = float(session.run(None, inputs)[0][0][0])
     is_same = dist < threshold
