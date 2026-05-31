@@ -9,7 +9,7 @@ st.set_page_config(page_title="Fingerprint Matcher", page_icon="🔏", layout="w
 HF_REPO_ID    = "Hafsa-Hab1b/fingerprint-siamese"
 HF_MODEL_FILE = "fingerprint_siamese.onnx"
 IMG_SIZE      = 64
-THRESHOLD     = 1.0
+THRESHOLD     = 0.20
 
 @st.cache_resource(show_spinner="Loading model... (first time only)")
 def load_model():
@@ -42,7 +42,7 @@ def predict(session, a, b, threshold):
 with st.sidebar:
     st.title("🔏 Fingerprint Matcher")
     st.markdown("---")
-    threshold = st.slider("Decision threshold", 0.1, 2.0, THRESHOLD, 0.05,
+    threshold = st.slider("Decision threshold", 0.01, 0.5, THRESHOLD, 0.01,
         help="Distance below this = same person. Range is 0 to 2.")
     st.markdown("---")
     st.caption("Siamese network · SOCOfing dataset")
